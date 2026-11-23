@@ -1,0 +1,27 @@
+{
+  "name": "@crewmind/core",
+  "version": "0.0.1",
+  "description": "Shared schemas, crypto, ranking and privacy logic for Crewmind",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "ulid": "3.0.2",
+    "zod": "4.6.7"
+  }
+}

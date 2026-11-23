@@ -1,0 +1,34 @@
+{
+  "name": "crewmind",
+  "version": "0.0.1",
+  "description": "Encrypted team memory for AI coding assistants. Catches conflicting decisions before they become conflicting code.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "crewmind": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "keywords": [
+    "ai",
+    "mcp",
+    "claude-code",
+    "cursor",
+    "team",
+    "memory",
+    "context",
+    "git"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@crewmind/core": "workspace:*",
+    "commander": "15.1.0"
+  }
+}
