@@ -60,14 +60,7 @@ export async function publish(
     const parent = await fetchMemory(gitDir);
     const commit = await writeCommit(gitDir, { parent: parent ?? undefined, files, message });
     try {
-      await runGit([
-        ...cacheArgs(gitDir),
-        'push',
-        '--porcelain',
-        'origin',
-        `${commit}:${MEMORY_REF}`,
-      ]);
-      await runGit([...cacheArgs(gitDir), 'update-ref', MEMORY_REF, commit]);
+      await pushMemory(gitDir, commit);
       return commit;
     } catch (e) {
       if (!(e instanceof GitError) || !isPushRejected(e) || attempt >= retries) throw e;
@@ -75,6 +68,15 @@ export async function publish(
       await new Promise((r) => setTimeout(r, baseDelay * 2 ** attempt + jitter));
     }
   }
+}
+
+/**
+ * Fast-forward-only push of `commit` to the remote memory ref, then records it locally.
+ * Throws a GitError that `isPushRejected` recognises when someone else pushed first.
+ */
+export async function pushMemory(gitDir: string, commit: string): Promise<void> {
+  await runGit([...cacheArgs(gitDir), 'push', '--porcelain', 'origin', `${commit}:${MEMORY_REF}`]);
+  await runGit([...cacheArgs(gitDir), 'update-ref', MEMORY_REF, commit]);
 }
 
 /** True when the push lost a race (non-fast-forward), as opposed to a network or auth failure. */
