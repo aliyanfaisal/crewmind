@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureCache } from '../src/git/cache.js';
 import { GitError, runGit } from '../src/git/exec.js';
 import {
@@ -15,6 +15,9 @@ import {
 import { writeCommit } from '../src/git/plumbing.js';
 import { findRepoRoot, getRemoteUrl } from '../src/git/repo.js';
 
+// Real git processes: Windows runners are ~10x slower than macOS here.
+vi.setConfig({ testTimeout: 60_000 });
+
 let dir: string;
 
 beforeEach(async () => {
@@ -22,7 +25,8 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'crewmind git '));
 });
 afterEach(async () => {
-  await rm(dir, { recursive: true, force: true });
+  // Windows can briefly hold locks on files a git process just closed.
+  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 /** A bare "GitHub" with one commit on main, plus a developer's working clone. */
