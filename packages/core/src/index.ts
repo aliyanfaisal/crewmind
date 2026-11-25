@@ -21,3 +21,12 @@ export {
   Timestamp,
   Tombstone,
 } from './schema/record.js';
+export {
+  parseRecordFile,
+  RECORD_FILE_MAX_BYTES,
+  RECORD_FILE_VERSION,
+  RecordFile,
+  RecordFileError,
+  recordIdFromPath,
+  recordPath,
+} from './schema/record-file.js';

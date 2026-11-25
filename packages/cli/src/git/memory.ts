@@ -1,5 +1,5 @@
 import { cacheArgs } from './cache.js';
-import { GitError, runGit } from './exec.js';
+import { GitError, runGit, runGitBuffer } from './exec.js';
 import { type MemoryFile, writeCommit } from './plumbing.js';
 
 export const MEMORY_REF = 'refs/crewmind/memory';
@@ -86,4 +86,77 @@ export function isPushRejected(e: GitError): boolean {
     /^!\s.*\[(rejected|remote rejected)\]/m.test(lines) &&
     /fetch first|non-fast-forward|cannot lock ref|failed to update ref/.test(lines)
   );
+}
+
+/**
+ * Reads many files from `commit` with one `cat-file --batch` process. Missing paths are
+ * absent from the result. Paths must not contain newlines (record paths never do).
+ */
+export async function readFiles(
+  gitDir: string,
+  commit: string,
+  paths: readonly string[],
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (paths.length === 0) return result;
+  const out = await runGitBuffer([...cacheArgs(gitDir), 'cat-file', '--batch'], {
+    input: paths.map((p) => `${commit}:${p}\n`).join(''),
+  });
+  let pos = 0;
+  for (const path of paths) {
+    const eol = out.indexOf(0x0a, pos);
+    if (eol < 0) throw new Error('truncated cat-file output');
+    const header = out.subarray(pos, eol).toString('utf8');
+    pos = eol + 1;
+    const m = /^[0-9a-f]+ (\w+) (\d+)$/.exec(header);
+    if (!m) continue; // "<name> missing" or ambiguous
+    const size = Number(m[2]);
+    if (m[1] === 'blob') result.set(path, out.subarray(pos, pos + size).toString('utf8'));
+    pos += size + 1; // content is followed by a newline
+  }
+  return result;
+}
+
+export interface TreeChange {
+  status: 'added' | 'modified' | 'deleted';
+  path: string;
+}
+
+/** Files that differ between two commits (no rename detection). */
+export async function diffCommits(gitDir: string, from: string, to: string): Promise<TreeChange[]> {
+  const out = await runGit([
+    ...cacheArgs(gitDir),
+    'diff-tree',
+    '-r',
+    '-z',
+    '--no-renames',
+    '--name-status',
+    from,
+    to,
+  ]);
+  const parts = out.split('\0');
+  const changes: TreeChange[] = [];
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    const code = parts[i];
+    const path = parts[i + 1] as string;
+    if (code === 'A') changes.push({ status: 'added', path });
+    else if (code === 'D') changes.push({ status: 'deleted', path });
+    else changes.push({ status: 'modified', path });
+  }
+  return changes;
+}
+
+/** True when `ancestor` is in `commit`'s history. False also when `ancestor` is unknown here. */
+export async function isAncestor(
+  gitDir: string,
+  ancestor: string,
+  commit: string,
+): Promise<boolean> {
+  try {
+    await runGit([...cacheArgs(gitDir), 'merge-base', '--is-ancestor', ancestor, commit]);
+    return true;
+  } catch (e) {
+    if (e instanceof GitError && (e.exitCode === 1 || e.exitCode === 128)) return false;
+    throw e;
+  }
 }

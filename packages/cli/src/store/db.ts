@@ -111,8 +111,27 @@ export class Store {
     }
   }
 
-  /** Runs `fn` atomically. Not reentrant. */
+  private txDepth = 0;
+
+  /** Runs `fn` atomically. Nested calls join the outer transaction. `fn` must be synchronous. */
   transaction<T>(fn: () => T): T {
+    if (this.txDepth > 0) {
+      this.txDepth++;
+      try {
+        return fn();
+      } finally {
+        this.txDepth--;
+      }
+    }
+    this.txDepth = 1;
+    try {
+      return this.runTransaction(fn);
+    } finally {
+      this.txDepth = 0;
+    }
+  }
+
+  private runTransaction<T>(fn: () => T): T {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const result = fn();

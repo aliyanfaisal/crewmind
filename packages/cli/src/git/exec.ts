@@ -43,6 +43,25 @@ function gitEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
 
 /** Runs git with execFile (never a shell). Resolves with stdout. */
 export function runGit(args: readonly string[], opts: RunGitOptions = {}): Promise<string> {
+  return spawnGit(args, opts, 'utf8');
+}
+
+/** Like runGit, but stdout stays raw bytes (for output framed by byte counts). */
+export function runGitBuffer(args: readonly string[], opts: RunGitOptions = {}): Promise<Buffer> {
+  return spawnGit(args, opts, 'buffer');
+}
+
+function spawnGit(args: readonly string[], opts: RunGitOptions, encoding: 'utf8'): Promise<string>;
+function spawnGit(
+  args: readonly string[],
+  opts: RunGitOptions,
+  encoding: 'buffer',
+): Promise<Buffer>;
+function spawnGit(
+  args: readonly string[],
+  opts: RunGitOptions,
+  encoding: 'utf8' | 'buffer',
+): Promise<string | Buffer> {
   return new Promise((resolve, reject) => {
     const child = execFile(
       'git',
@@ -53,12 +72,12 @@ export function runGit(args: readonly string[], opts: RunGitOptions = {}): Promi
         timeout: opts.timeoutMs ?? 60_000,
         maxBuffer: 64 * 1024 * 1024,
         windowsHide: true,
-        encoding: 'utf8',
+        encoding,
       },
       (error, stdout, stderr) => {
         if (error) {
           const code = typeof error.code === 'number' ? error.code : null;
-          reject(new GitError(args, code, stderr, stdout));
+          reject(new GitError(args, code, stderr.toString(), stdout.toString()));
         } else {
           resolve(stdout);
         }
