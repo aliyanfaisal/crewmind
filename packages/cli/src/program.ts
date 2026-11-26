@@ -5,6 +5,7 @@ import { Command, Option } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
 import { runInit } from './commands/init.js';
 import { type NoteOptions, runNote } from './commands/note.js';
+import { runStatus } from './commands/status.js';
 import { runSync } from './commands/sync.js';
 import { findRepoRoot } from './git/repo.js';
 import { readRepoConfig } from './project.js';
@@ -69,30 +70,37 @@ export function createProgram(io: ProgramIO = defaultIO()): Command {
     .option('-f, --files <paths...>', 'files or folders this is about')
     .option('--tags <tags...>', 'lowercase tags')
     .option('--supersedes <id>', 'id of the note this replaces')
+    .option('--now', 'send now instead of waiting for your next code push')
     .action(async (text: string[], opts: Omit<NoteOptions, 'cwd' | 'dataDir' | 'text'>) => {
-      const { record } = await runNote({
+      const { record, sync } = await runNote({
         ...opts,
         cwd: io.cwd,
         dataDir: io.dataDir,
         text: text.join(' '),
       });
       io.out(
-        `✓ Queued ${record.type} ${record.id}\n  ${record.title}\n` +
-          '  Run `crewmind sync` to send it.\n',
+        sync
+          ? `✓ Sent ${record.type} ${record.id}\n  ${record.title}\n`
+          : `✓ Queued ${record.type} ${record.id}\n  ${record.title}\n` +
+              '  It will be shared after you push your next commit on this branch (or use --now).\n',
       );
     });
 
   program
     .command('sync')
     .description('Send queued notes and fetch new ones from your team')
-    .action(async () => {
-      const r = await runSync({ cwd: io.cwd, dataDir: io.dataDir });
+    .option('--now', 'also send notes still waiting for your code push')
+    .action(async (opts: { now?: boolean }) => {
+      const r = await runSync({ cwd: io.cwd, dataDir: io.dataDir, now: opts.now });
       const plural = (n: number) => `${n} note${n === 1 ? '' : 's'}`;
       io.out(
         r.sent === 0 && r.received === 0
           ? '✓ Up to date.\n'
           : `✓ Sent ${plural(r.sent)}, received ${plural(r.received)}.\n`,
       );
+      if (r.held > 0) {
+        io.out(`  ${plural(r.held)} waiting for your push (see \`crewmind status\`).\n`);
+      }
       if (r.dropped.length > 0) {
         io.err(`⚠ Ignored ${plural(r.dropped.length)} that failed validation:\n`);
         for (const d of r.dropped) io.err(`  ${d.path}: ${d.reason}\n`);
@@ -113,7 +121,23 @@ export function createProgram(io: ProgramIO = defaultIO()): Command {
         io.out("Crewmind isn't set up in this repository yet. Run: crewmind init\n");
         return;
       }
-      io.out(`Crewmind is set up.\n  Project: ${config.projectId}\n  Remote:  ${config.remote}\n`);
+      const s = await runStatus({ cwd: io.cwd, dataDir: io.dataDir });
+      io.out(
+        `Crewmind is set up.\n  Project: ${s.projectId}\n  Remote:  ${s.remote}\n` +
+          `  Notes:   ${s.records} indexed\n`,
+      );
+      if (s.offline) io.out(`  ⚠ Couldn't reach "${s.remote}"; push state unknown.\n`);
+      if (s.ready.length > 0) {
+        io.out(`\nReady to send (${s.ready.length}), run \`crewmind sync\`:\n`);
+        for (const n of s.ready) io.out(`  ${n.id}  ${n.title}\n`);
+      }
+      if (s.held.length > 0) {
+        io.out(`\nWaiting for your push (${s.held.length}):\n`);
+        for (const n of s.held) io.out(`  ${n.id}  ${n.title}  [${n.branch ?? 'no branch'}]\n`);
+        io.out(
+          '  They are shared once the branch has a newer pushed commit. Send now: crewmind sync --now\n',
+        );
+      }
     });
 
   return program;

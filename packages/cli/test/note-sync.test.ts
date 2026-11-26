@@ -120,7 +120,7 @@ describe('crewmind sync', () => {
     const pc2 = await machine('pc2', remote);
     const { record } = await runNote({ ...pc1, text: WHY, type: 'decision' });
 
-    expect(await runSync(pc1)).toMatchObject({ sent: 1, received: 0 });
+    expect(await runSync({ ...pc1, now: true })).toMatchObject({ sent: 1, received: 0 });
     expect(outbox(pc1)).toHaveLength(0);
     expect(records(pc1).map((r) => r.id)).toEqual([record.id]);
 
@@ -142,7 +142,7 @@ describe('crewmind sync', () => {
     const pc2 = await machine('pc2', remote);
     const a = await runNote({ ...pc1, text: WHY });
     const b = await runNote({ ...pc2, text: `${WHY} (second)` });
-    await Promise.all([runSync(pc1), runSync(pc2)]);
+    await Promise.all([runSync({ ...pc1, now: true }), runSync({ ...pc2, now: true })]);
     await runSync(pc1);
     await runSync(pc2);
     const want = [a.record.id, b.record.id].sort();
@@ -164,13 +164,13 @@ describe('crewmind sync', () => {
     await runNote({ ...pc1, text: WHY });
     await rename(remote, `${remote}.offline`);
 
-    const err = await runSync(pc1).catch((e: unknown) => e);
+    const err = await runSync({ ...pc1, now: true }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CrewmindError);
     expect((err as Error).message).toMatch(/1 note.*queued/);
     expect(outbox(pc1)).toHaveLength(1);
 
     await rename(`${remote}.offline`, remote);
-    expect(await runSync(pc1)).toMatchObject({ sent: 1 });
+    expect(await runSync({ ...pc1, now: true })).toMatchObject({ sent: 1 });
     expect(outbox(pc1)).toHaveLength(0);
   });
 });

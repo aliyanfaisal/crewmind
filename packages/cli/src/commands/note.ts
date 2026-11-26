@@ -1,6 +1,7 @@
 import { ContextRecord, LIMITS, newId, type RecordType } from '@crewmind/core';
 import { CrewmindError } from '../errors.js';
 import { memberId, openWorkspace, workingHead } from '../workspace.js';
+import { runSync, type SyncResult } from './sync.js';
 
 export interface NoteOptions {
   cwd: string;
@@ -11,15 +12,19 @@ export interface NoteOptions {
   files?: string[];
   tags?: string[];
   supersedes?: string;
+  /** Send right away instead of waiting for the code push (D29). */
+  now?: boolean;
 }
 
 const TITLE_DEFAULT_MAX = 80;
 
 /**
- * Creates a record and queues it in the outbox. Until review lands (M3) notes skip drafts;
- * until the publish gate lands they leave on the next `sync`.
+ * Creates a record and queues it in the outbox. Until review lands (M3) notes skip drafts.
+ * It leaves once its branch is pushed (publish gate, D29), or immediately with `now`.
  */
-export async function runNote(opts: NoteOptions): Promise<{ record: ContextRecord }> {
+export async function runNote(
+  opts: NoteOptions,
+): Promise<{ record: ContextRecord; sync?: SyncResult }> {
   const body = opts.text.trim();
   if (body.length < LIMITS.bodyMin) {
     throw new CrewmindError(
@@ -27,6 +32,7 @@ export async function runNote(opts: NoteOptions): Promise<{ record: ContextRecor
     );
   }
   const ws = await openWorkspace(opts);
+  let record: ContextRecord;
   try {
     const { branch, head } = await workingHead(ws.repoRoot);
     const parsed = ContextRecord.safeParse({
@@ -53,10 +59,13 @@ export async function runNote(opts: NoteOptions): Promise<{ record: ContextRecor
       );
     }
     ws.store.enqueue(parsed.data, { branch, head });
-    return { record: parsed.data };
+    record = parsed.data;
   } finally {
     ws.store.close();
   }
+  if (!opts.now) return { record };
+  // Queued first, so an offline failure here still leaves the note safely in the outbox.
+  return { record, sync: await runSync({ ...opts, sendIds: [record.id] }) };
 }
 
 /** First line, cut at a word boundary. */
