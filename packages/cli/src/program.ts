@@ -1,8 +1,11 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { Command } from 'commander';
+import { RecordType } from '@crewmind/core';
+import { Command, Option } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
 import { runInit } from './commands/init.js';
+import { type NoteOptions, runNote } from './commands/note.js';
+import { runSync } from './commands/sync.js';
 import { findRepoRoot } from './git/repo.js';
 import { readRepoConfig } from './project.js';
 
@@ -53,6 +56,47 @@ export function createProgram(io: ProgramIO = defaultIO()): Command {
           '  Notes live in refs/crewmind/memory: hidden from branches, clones and CI.\n' +
           PLAINTEXT_WARNING,
       );
+    });
+
+  program
+    .command('note')
+    .description('Write a note for your team (queued until the next sync)')
+    .argument('<text...>', 'what was decided or learned, and why')
+    .addOption(
+      new Option('-t, --type <type>', 'kind of note').choices(RecordType.options).default('note'),
+    )
+    .option('--title <title>', 'short title (default: the first line)')
+    .option('-f, --files <paths...>', 'files or folders this is about')
+    .option('--tags <tags...>', 'lowercase tags')
+    .option('--supersedes <id>', 'id of the note this replaces')
+    .action(async (text: string[], opts: Omit<NoteOptions, 'cwd' | 'dataDir' | 'text'>) => {
+      const { record } = await runNote({
+        ...opts,
+        cwd: io.cwd,
+        dataDir: io.dataDir,
+        text: text.join(' '),
+      });
+      io.out(
+        `✓ Queued ${record.type} ${record.id}\n  ${record.title}\n` +
+          '  Run `crewmind sync` to send it.\n',
+      );
+    });
+
+  program
+    .command('sync')
+    .description('Send queued notes and fetch new ones from your team')
+    .action(async () => {
+      const r = await runSync({ cwd: io.cwd, dataDir: io.dataDir });
+      const plural = (n: number) => `${n} note${n === 1 ? '' : 's'}`;
+      io.out(
+        r.sent === 0 && r.received === 0
+          ? '✓ Up to date.\n'
+          : `✓ Sent ${plural(r.sent)}, received ${plural(r.received)}.\n`,
+      );
+      if (r.dropped.length > 0) {
+        io.err(`⚠ Ignored ${plural(r.dropped.length)} that failed validation:\n`);
+        for (const d of r.dropped) io.err(`  ${d.path}: ${d.reason}\n`);
+      }
     });
 
   program

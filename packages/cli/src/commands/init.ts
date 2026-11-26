@@ -8,6 +8,7 @@ import { ensureCache } from '../git/cache.js';
 import { GitError } from '../git/exec.js';
 import { fetchMemory, isPushRejected, pushMemory, readFile } from '../git/memory.js';
 import { writeCommit } from '../git/plumbing.js';
+import { reach } from '../git/reach.js';
 import { findRepoRoot, getRemoteUrl } from '../git/repo.js';
 import {
   addToExclude,
@@ -123,19 +124,4 @@ async function readManifest(gitDir: string, head: string): Promise<ProjectManife
     );
   }
   return result.data;
-}
-
-/** Turns network and auth failures into a message the user can act on. */
-async function reach<T>(fn: () => Promise<T>, remote: string, remoteUrl: string): Promise<T> {
-  try {
-    return await fn();
-  } catch (e) {
-    if (!(e instanceof GitError)) throw e;
-    if (isPushRejected(e)) throw new CrewmindError('Push rejected.', { cause: e });
-    const detail = e.stderr.trim().split('\n')[0] ?? '';
-    throw new CrewmindError(
-      `Could not reach "${remote}" (${remoteUrl}). Check that \`git fetch ${remote}\` works. ${detail}`.trim(),
-      { cause: e },
-    );
-  }
 }
